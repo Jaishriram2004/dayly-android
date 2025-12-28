@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 // --------------------
 // Data model
 // --------------------
+@kotlinx.serialization.Serializable
 data class ActivityItem(
     val time: String,
     val title: String,
@@ -49,15 +51,25 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DaylyApp() {
 
-    var activities by remember {
-        mutableStateOf(
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var activities by remember { mutableStateOf<List<ActivityItem>>(emptyList()) }
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    // 🔹 LOAD SAVED DATA ON APP START
+    LaunchedEffect(Unit) {
+        val saved = DaylyDataStore.loadActivities(context)
+        activities = if (saved.isNotEmpty()) {
+            saved
+        } else {
             listOf(
                 ActivityItem("06:00 – 07:00", "Morning Gym", false),
                 ActivityItem("09:30 – 10:00", "Team Standup", true),
                 ActivityItem("14:00 – 15:00", "Project Work", false),
                 ActivityItem("21:00 – 21:30", "Reading", false)
             )
-        )
+        }
     }
 
     val completedCount = activities.count { it.completed }
@@ -66,10 +78,7 @@ fun DaylyApp() {
             completedCount.toFloat() / activities.size
         else 0f
 
-    var showAddDialog by remember { mutableStateOf(false) }
-
     val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -104,19 +113,12 @@ fun DaylyApp() {
                     .fillMaxSize()
             ) {
 
-                Text(
-                    text = "Today's Progress",
-                    style = MaterialTheme.typography.labelMedium
-                )
+                Text("Today's Progress", style = MaterialTheme.typography.labelMedium)
 
-                Text(
-                    text = "${(progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Emoji logic (4 phases)
                 val emoji = when {
                     progress >= 1f -> "🎉"
                     progress >= 0.66f -> "😄"
@@ -124,7 +126,7 @@ fun DaylyApp() {
                     else -> "😐"
                 }
 
-                // ✅ CORRECT progress bar with emoji at TRUE end
+                // Progress bar with emoji at true end
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -135,15 +137,14 @@ fun DaylyApp() {
                     val barWidth = maxWidth
                     val safeProgress = progress.coerceIn(0f, 1f)
 
-                    // Filled gradient progress
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
                             .width(barWidth * safeProgress)
                             .clip(RoundedCornerShape(50))
                             .background(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(
+                                Brush.horizontalGradient(
+                                    listOf(
                                         Color(0xFFB39DDB),
                                         Color(0xFF7E57C2)
                                     )
@@ -151,14 +152,14 @@ fun DaylyApp() {
                             )
                     )
 
-                    // Emoji exactly at end of filled bar
                     Text(
                         text = emoji,
                         fontSize = 16.sp,
                         modifier = Modifier
                             .align(Alignment.CenterStart)
                             .offset(
-                                x = (barWidth * safeProgress).coerceAtMost(barWidth - 20.dp)
+                                x = (barWidth * safeProgress)
+                                    .coerceAtMost(barWidth - 20.dp)
                             )
                     )
                 }
@@ -171,6 +172,11 @@ fun DaylyApp() {
                         onCheckedChange = { checked ->
                             activities = activities.toMutableList().also {
                                 it[index] = it[index].copy(completed = checked)
+                            }
+
+                            // 🔹 SAVE ON EVERY CHANGE
+                            scope.launch {
+                                DaylyDataStore.saveActivities(context, activities)
                             }
                         }
                     )
@@ -196,10 +202,7 @@ fun DrawerContent(onAddItemClick: () -> Unit) {
                 .padding(16.dp)
         ) {
 
-            Text(
-                text = "Dayly",
-                style = MaterialTheme.typography.titleLarge
-            )
+            Text("Dayly", style = MaterialTheme.typography.titleLarge)
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -213,23 +216,13 @@ fun DrawerContent(onAddItemClick: () -> Unit) {
             Spacer(modifier = Modifier.height(8.dp))
 
             NavigationDrawerItem(
-                label = {
-                    Text(
-                        "Settings",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
+                label = { Text("Settings", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 selected = false,
                 onClick = {}
             )
 
             NavigationDrawerItem(
-                label = {
-                    Text(
-                        "Account",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
+                label = { Text("Account", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 selected = false,
                 onClick = {}
             )
@@ -245,7 +238,6 @@ fun ActivityRow(
     item: ActivityItem,
     onCheckedChange: (Boolean) -> Unit
 ) {
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -253,19 +245,8 @@ fun ActivityRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
 
-        Text(
-            text = item.time,
-            modifier = Modifier.width(100.dp),
-            style = MaterialTheme.typography.bodySmall
-        )
-
-        Text(
-            text = item.title,
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 8.dp),
-            style = MaterialTheme.typography.bodyMedium
-        )
+        Text(item.time, modifier = Modifier.width(100.dp))
+        Text(item.title, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
 
         Checkbox(
             checked = item.completed,
@@ -279,59 +260,13 @@ fun ActivityRow(
 // --------------------
 @Composable
 fun AddItemDialog(onDismiss: () -> Unit) {
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Activity") },
-        text = {
-            Column {
-
-                OutlinedTextField(
-                    value = "",
-                    onValueChange = {},
-                    label = { Text("Activity description") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text("Time")
-
-                Row {
-                    OutlinedTextField(
-                        value = "",
-                        onValueChange = {},
-                        label = { Text("Start") },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    OutlinedTextField(
-                        value = "",
-                        onValueChange = {},
-                        label = { Text("End") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text("Days")
-
-                val days = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-
-                days.forEach { day ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = false, onCheckedChange = {})
-                        Text(day)
-                    }
-                }
-            }
-        },
+        text = { Text("Add Item logic comes in next phase") },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Add Activity")
+                Text("Close")
             }
         }
     )
