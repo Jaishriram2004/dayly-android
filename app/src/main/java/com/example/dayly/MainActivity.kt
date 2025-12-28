@@ -20,17 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
-
-// --------------------
-// Data model
-// --------------------
-@kotlinx.serialization.Serializable
-data class ActivityItem(
-    val time: String,
-    val title: String,
-    val completed: Boolean
-)
 
 // --------------------
 // Activity
@@ -45,40 +36,25 @@ class MainActivity : ComponentActivity() {
 }
 
 // --------------------
-// Main App
+// Main App (UI ONLY)
 // --------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DaylyApp() {
 
+    // 🔹 ViewModel (ONLY source of truth)
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val viewModel: DaylyViewModel = viewModel(
+        factory = DaylyViewModelFactory(context)
+    )
 
-    var activities by remember { mutableStateOf<List<ActivityItem>>(emptyList()) }
+    val activities by viewModel.activities.collectAsState()
+    val progress by viewModel.progress.collectAsState()
+
     var showAddDialog by remember { mutableStateOf(false) }
 
-    // 🔹 LOAD SAVED DATA ON APP START
-    LaunchedEffect(Unit) {
-        val saved = DaylyDataStore.loadActivities(context)
-        activities = if (saved.isNotEmpty()) {
-            saved
-        } else {
-            listOf(
-                ActivityItem("06:00 – 07:00", "Morning Gym", false),
-                ActivityItem("09:30 – 10:00", "Team Standup", true),
-                ActivityItem("14:00 – 15:00", "Project Work", false),
-                ActivityItem("21:00 – 21:30", "Reading", false)
-            )
-        }
-    }
-
-    val completedCount = activities.count { it.completed }
-    val progress =
-        if (activities.isNotEmpty())
-            completedCount.toFloat() / activities.size
-        else 0f
-
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -114,7 +90,6 @@ fun DaylyApp() {
             ) {
 
                 Text("Today's Progress", style = MaterialTheme.typography.labelMedium)
-
                 Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -166,18 +141,12 @@ fun DaylyApp() {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                // 🔹 UI calls ViewModel ONLY
                 activities.forEachIndexed { index, activity ->
                     ActivityRow(
                         item = activity,
                         onCheckedChange = { checked ->
-                            activities = activities.toMutableList().also {
-                                it[index] = it[index].copy(completed = checked)
-                            }
-
-                            // 🔹 SAVE ON EVERY CHANGE
-                            scope.launch {
-                                DaylyDataStore.saveActivities(context, activities)
-                            }
+                            viewModel.toggleActivity(index, checked)
                         }
                     )
                 }
@@ -246,7 +215,12 @@ fun ActivityRow(
     ) {
 
         Text(item.time, modifier = Modifier.width(100.dp))
-        Text(item.title, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+        Text(
+            item.title,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp)
+        )
 
         Checkbox(
             checked = item.completed,
