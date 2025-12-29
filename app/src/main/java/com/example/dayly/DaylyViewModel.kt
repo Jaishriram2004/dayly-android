@@ -32,6 +32,14 @@ class DaylyViewModel(
             updateProgress()
         }
     }
+    fun addActivity(item: ActivityItem) {
+        _activities.value = _activities.value + item
+        updateProgress()
+
+        viewModelScope.launch {
+            DaylyDataStore.saveActivities(context, _activities.value)
+        }
+    }
 
     fun toggleActivity(index: Int, checked: Boolean) {
         _activities.value = _activities.value.toMutableList().also {

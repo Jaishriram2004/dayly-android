@@ -42,7 +42,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DaylyApp() {
 
-    // 🔹 ViewModel (ONLY source of truth)
     val context = LocalContext.current
     val viewModel: DaylyViewModel = viewModel(
         factory = DaylyViewModelFactory(context)
@@ -101,7 +100,6 @@ fun DaylyApp() {
                     else -> "😐"
                 }
 
-                // Progress bar with emoji at true end
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -141,7 +139,6 @@ fun DaylyApp() {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // 🔹 UI calls ViewModel ONLY
                 activities.forEachIndexed { index, activity ->
                     ActivityRow(
                         item = activity,
@@ -154,8 +151,14 @@ fun DaylyApp() {
         }
     }
 
+    // ✅ FIXED: Dialog now adds item via ViewModel
     if (showAddDialog) {
-        AddItemDialog(onDismiss = { showAddDialog = false })
+        AddItemDialog(
+            onAdd = { newItem ->
+                viewModel.addActivity(newItem)
+            },
+            onDismiss = { showAddDialog = false }
+        )
     }
 }
 
@@ -233,14 +236,56 @@ fun ActivityRow(
 // Add Item Dialog
 // --------------------
 @Composable
-fun AddItemDialog(onDismiss: () -> Unit) {
+fun AddItemDialog(
+    onAdd: (ActivityItem) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var time by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Activity") },
-        text = { Text("Add Item logic comes in next phase") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = time,
+                    onValueChange = { time = it },
+                    label = { Text("Time (e.g. 18:00 – 19:00)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Activity title") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
         confirmButton = {
+            TextButton(
+                onClick = {
+                    if (title.isNotBlank() && time.isNotBlank()) {
+                        onAdd(
+                            ActivityItem(
+                                time = time,
+                                title = title,
+                                completed = false
+                            )
+                        )
+                        onDismiss()
+                    }
+                }
+            ) {
+                Text("Add")
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text("Cancel")
             }
         }
     )
