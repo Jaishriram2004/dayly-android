@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 
 // --------------------
 // Activity
@@ -37,7 +39,7 @@ class MainActivity : ComponentActivity() {
 }
 
 // --------------------
-// Main App (UI ONLY)
+// Main App
 // --------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,7 +53,6 @@ fun DaylyApp() {
     val activities by viewModel.activities.collectAsState()
     val progress by viewModel.progress.collectAsState()
 
-    // ✅ Schedule daily summary ONCE
     LaunchedEffect(Unit) {
         scheduleDailySummary(context)
     }
@@ -64,12 +65,10 @@ fun DaylyApp() {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            DrawerContent(
-                onAddItemClick = {
-                    scope.launch { drawerState.close() }
-                    showAddDialog = true
-                }
-            )
+            DrawerContent {
+                scope.launch { drawerState.close() }
+                showAddDialog = true
+            }
         }
     ) {
         Scaffold(
@@ -123,10 +122,7 @@ fun DaylyApp() {
                             .clip(RoundedCornerShape(50))
                             .background(
                                 Brush.horizontalGradient(
-                                    listOf(
-                                        Color(0xFFB39DDB),
-                                        Color(0xFF7E57C2)
-                                    )
+                                    listOf(Color(0xFFB39DDB), Color(0xFF7E57C2))
                                 )
                             )
                     )
@@ -143,7 +139,6 @@ fun DaylyApp() {
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
                 Spacer(modifier = Modifier.height(24.dp))
 
                 activities.forEachIndexed { index, activity ->
@@ -160,9 +155,8 @@ fun DaylyApp() {
 
     if (showAddDialog) {
         AddItemDialog(
-            onAdd = { newItem ->
-                viewModel.addActivity(newItem)
-            },
+            activities = activities,
+            onAdd = { viewModel.addActivity(it) },
             onDismiss = { showAddDialog = false }
         )
     }
@@ -179,30 +173,13 @@ fun DrawerContent(onAddItemClick: () -> Unit) {
                 .fillMaxHeight()
                 .padding(16.dp)
         ) {
-
             Text("Dayly", style = MaterialTheme.typography.titleLarge)
-
             Spacer(modifier = Modifier.height(24.dp))
-
             NavigationDrawerItem(
                 label = { Text("Add Item") },
                 selected = false,
                 onClick = onAddItemClick,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            NavigationDrawerItem(
-                label = { Text("Settings", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                selected = false,
-                onClick = {}
-            )
-
-            NavigationDrawerItem(
-                label = { Text("Account", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                selected = false,
-                onClick = {}
             )
         }
     }
@@ -223,7 +200,16 @@ fun ActivityRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
 
-        Text(item.time, modifier = Modifier.width(100.dp))
+        Text(
+            "%02d:%02d – %02d:%02d".format(
+                item.startHour,
+                item.startMinute,
+                item.endHour,
+                item.endMinute
+            ),
+            modifier = Modifier.width(120.dp)
+        )
+
         Text(
             item.title,
             modifier = Modifier
@@ -239,29 +225,53 @@ fun ActivityRow(
 }
 
 // --------------------
-// Add Item Dialog
+// Add Item Dialog (WITH OVERLAP VALIDATION)
 // --------------------
 @Composable
 fun AddItemDialog(
+    activities: List<ActivityItem>,
     onAdd: (ActivityItem) -> Unit,
     onDismiss: () -> Unit
 ) {
     var title by remember { mutableStateOf("") }
-    var time by remember { mutableStateOf("") }
+
+    var sh by remember { mutableStateOf(9) }
+    var sm by remember { mutableStateOf(0) }
+    var eh by remember { mutableStateOf(10) }
+    var em by remember { mutableStateOf(0) }
+
+    var hasError by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Activity") },
         text = {
             Column {
-                OutlinedTextField(
-                    value = time,
-                    onValueChange = { time = it },
-                    label = { Text("Time (e.g. 18:00 – 19:00)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Text("Start Time")
+                TimeRow(sh, sm, hasError) {
+                    sh = it.first
+                    sm = it.second
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Text("End Time")
+                TimeRow(eh, em, hasError) {
+                    eh = it.first
+                    em = it.second
+                }
+
+                if (hasError) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Time should not overlap",
+                        color = Color.Red,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
 
                 OutlinedTextField(
                     value = title,
@@ -272,39 +282,119 @@ fun AddItemDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    if (title.isNotBlank() && time.isNotBlank()) {
-                        onAdd(
-                            ActivityItem(
-                                time = time,
-                                title = title,
-                                completed = false
-                            )
-                        )
-                        onDismiss()
-                    }
+            TextButton(onClick = {
+                val overlap = isOverlapping(sh, sm, eh, em, activities)
+
+                if (title.isBlank() || overlap) {
+                    hasError = overlap
+                    return@TextButton
                 }
-            ) {
+
+                onAdd(
+                    ActivityItem(
+                        title = title,
+                        completed = false,
+                        startHour = sh,
+                        startMinute = sm,
+                        endHour = eh,
+                        endMinute = em
+                    )
+                )
+                onDismiss()
+            }) {
                 Text("Add")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         }
     )
 }
 
 // --------------------
-// Daily Summary Scheduler
+// Time Row with Error Border
+// --------------------
+@Composable
+fun TimeRow(
+    hour: Int,
+    minute: Int,
+    hasError: Boolean,
+    onChange: (Pair<Int, Int>) -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                if (hasError) Color.Red else Color.Transparent,
+                RoundedCornerShape(8.dp)
+            )
+            .padding(4.dp)
+    ) {
+        NumberDropdown("Hour", 0..23, hour) { onChange(it to minute) }
+        NumberDropdown("Min", 0..59, minute) { onChange(hour to it) }
+    }
+}
+
+// --------------------
+// Overlap Logic
+// --------------------
+fun isOverlapping(
+    sh: Int,
+    sm: Int,
+    eh: Int,
+    em: Int,
+    existing: List<ActivityItem>
+): Boolean {
+    val newStart = sh * 60 + sm
+    val newEnd = eh * 60 + em
+
+    return existing.any {
+        val start = it.startHour * 60 + it.startMinute
+        val end = it.endHour * 60 + it.endMinute
+        newStart < end && newEnd > start
+    }
+}
+
+// --------------------
+// Dropdown Component
+// --------------------
+@Composable
+fun NumberDropdown(
+    label: String,
+    range: IntRange,
+    selected: Int,
+    onSelect: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column {
+        OutlinedButton(onClick = { expanded = true }) {
+            Text("$label: ${"%02d".format(selected)}")
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            range.forEach { value ->
+                DropdownMenuItem(
+                    text = { Text("%02d".format(value)) },
+                    onClick = {
+                        onSelect(value)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+// --------------------
+// Notification Scheduler
 // --------------------
 fun scheduleDailySummary(context: Context) {
-
     val workRequest =
         androidx.work.PeriodicWorkRequestBuilder<DailySummaryWorker>(
-            15, java.util.concurrent.TimeUnit.MINUTES
+            1, TimeUnit.DAYS
         ).build()
 
     androidx.work.WorkManager.getInstance(context)

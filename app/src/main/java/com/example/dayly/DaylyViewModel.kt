@@ -14,55 +14,119 @@ class DaylyViewModel(
     private val _activities = MutableStateFlow<List<ActivityItem>>(emptyList())
     val activities: StateFlow<List<ActivityItem>> = _activities
 
-    val progress: StateFlow<Float> =
-        MutableStateFlow(0f)
+    private val _progress = MutableStateFlow(0f)
+    val progress: StateFlow<Float> = _progress
 
     init {
         loadActivities()
     }
 
+    // --------------------
+    // Load + sort
+    // --------------------
     private fun loadActivities() {
         viewModelScope.launch {
             val saved = DaylyDataStore.loadActivities(context)
-            _activities.value = if (saved.isNotEmpty()) {
+
+            val initial = if (saved.isNotEmpty()) {
                 saved
             } else {
                 defaultActivities()
             }
+
+            val sorted = sortByTime(initial)
+
+            _activities.value = sorted
             updateProgress()
+
+            // Save once to ensure order is persisted
+            DaylyDataStore.saveActivities(context, sorted)
         }
     }
+
+    // --------------------
+    // Add new activity
+    // --------------------
     fun addActivity(item: ActivityItem) {
-        _activities.value = _activities.value + item
+        val updated = sortByTime(_activities.value + item)
+
+        _activities.value = updated
         updateProgress()
 
         viewModelScope.launch {
-            DaylyDataStore.saveActivities(context, _activities.value)
+            DaylyDataStore.saveActivities(context, updated)
         }
     }
 
+    // --------------------
+    // Toggle completion
+    // --------------------
     fun toggleActivity(index: Int, checked: Boolean) {
-        _activities.value = _activities.value.toMutableList().also {
+        val updated = _activities.value.toMutableList().also {
             it[index] = it[index].copy(completed = checked)
         }
+
+        _activities.value = updated
         updateProgress()
 
         viewModelScope.launch {
-            DaylyDataStore.saveActivities(context, _activities.value)
+            DaylyDataStore.saveActivities(context, updated)
         }
     }
 
+    // --------------------
+    // Progress calculation
+    // --------------------
     private fun updateProgress() {
         val completed = _activities.value.count { it.completed }
         val total = _activities.value.size
-        (progress as MutableStateFlow).value =
-            if (total > 0) completed.toFloat() / total else 0f
+        _progress.value = if (total > 0) completed.toFloat() / total else 0f
     }
 
+    // --------------------
+    // Sort by start time
+    // --------------------
+    private fun sortByTime(items: List<ActivityItem>): List<ActivityItem> {
+        return items.sortedBy {
+            it.startHour * 60 + it.startMinute
+        }
+    }
+
+    // --------------------
+    // Default seed data
+    // --------------------
     private fun defaultActivities() = listOf(
-        ActivityItem("06:00 – 07:00", "Morning Gym", false),
-        ActivityItem("09:30 – 10:00", "Team Standup", true),
-        ActivityItem("14:00 – 15:00", "Project Work", false),
-        ActivityItem("21:00 – 21:30", "Reading", false)
+        ActivityItem(
+            title = "Morning Gym",
+            completed = false,
+            startHour = 6,
+            startMinute = 0,
+            endHour = 7,
+            endMinute = 0
+        ),
+        ActivityItem(
+            title = "Team Standup",
+            completed = true,
+            startHour = 9,
+            startMinute = 30,
+            endHour = 10,
+            endMinute = 0
+        ),
+        ActivityItem(
+            title = "Project Work",
+            completed = false,
+            startHour = 14,
+            startMinute = 0,
+            endHour = 15,
+            endMinute = 0
+        ),
+        ActivityItem(
+            title = "Reading",
+            completed = false,
+            startHour = 21,
+            startMinute = 0,
+            endHour = 21,
+            endMinute = 30
+        )
     )
 }
