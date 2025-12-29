@@ -1,5 +1,6 @@
 package com.example.dayly
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -49,6 +50,11 @@ fun DaylyApp() {
 
     val activities by viewModel.activities.collectAsState()
     val progress by viewModel.progress.collectAsState()
+
+    // ✅ Schedule daily summary ONCE
+    LaunchedEffect(Unit) {
+        scheduleDailySummary(context)
+    }
 
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -137,6 +143,7 @@ fun DaylyApp() {
                     )
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
                 Spacer(modifier = Modifier.height(24.dp))
 
                 activities.forEachIndexed { index, activity ->
@@ -151,7 +158,6 @@ fun DaylyApp() {
         }
     }
 
-    // ✅ FIXED: Dialog now adds item via ViewModel
     if (showAddDialog) {
         AddItemDialog(
             onAdd = { newItem ->
@@ -289,4 +295,22 @@ fun AddItemDialog(
             }
         }
     )
+}
+
+// --------------------
+// Daily Summary Scheduler
+// --------------------
+fun scheduleDailySummary(context: Context) {
+
+    val workRequest =
+        androidx.work.PeriodicWorkRequestBuilder<DailySummaryWorker>(
+            15, java.util.concurrent.TimeUnit.MINUTES
+        ).build()
+
+    androidx.work.WorkManager.getInstance(context)
+        .enqueueUniquePeriodicWork(
+            "daily_summary",
+            androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
+            workRequest
+        )
 }
