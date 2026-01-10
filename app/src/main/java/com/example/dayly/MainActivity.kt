@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -74,12 +75,17 @@ fun DaylyApp() {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Today") },
+                    title = { Text(getTodayDate()) },
                     navigationIcon = {
                         IconButton(onClick = {
                             scope.launch { drawerState.open() }
                         }) {
                             Icon(Icons.Default.Menu, contentDescription = "Menu")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showAddDialog = true }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add")
                         }
                     }
                 )
@@ -146,6 +152,9 @@ fun DaylyApp() {
                         item = activity,
                         onCheckedChange = { checked ->
                             viewModel.toggleActivity(index, checked)
+                        },
+                        onDelete = {
+                            viewModel.deleteActivity(index)
                         }
                     )
                 }
@@ -191,7 +200,8 @@ fun DrawerContent(onAddItemClick: () -> Unit) {
 @Composable
 fun ActivityRow(
     item: ActivityItem,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    onDelete: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -216,6 +226,16 @@ fun ActivityRow(
                 .weight(1f)
                 .padding(horizontal = 8.dp)
         )
+
+        IconButton(onClick = {
+            onDelete()   // we’ll wire this in step 2
+        }) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "Delete",
+                tint = Color.Red
+            )
+        }
 
         Checkbox(
             checked = item.completed,
@@ -403,4 +423,8 @@ fun scheduleDailySummary(context: Context) {
             androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
             workRequest
         )
+}
+fun getTodayDate(): String {
+    val sdf = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault())
+    return sdf.format(java.util.Date())
 }

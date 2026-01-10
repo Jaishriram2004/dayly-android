@@ -28,10 +28,13 @@ class DaylyViewModel(
         viewModelScope.launch {
             val saved = DaylyDataStore.loadActivities(context)
 
-            val initial = if (saved.isNotEmpty()) {
-                saved
+            val initial = if (saved.isEmpty() && !hasSeededBefore()) {
+                val defaults = defaultActivities()
+                DaylyDataStore.saveActivities(context, defaults)
+                markSeeded()
+                defaults
             } else {
-                defaultActivities()
+                saved
             }
 
             val sorted = sortByTime(initial)
@@ -41,6 +44,18 @@ class DaylyViewModel(
 
             // Save once to ensure order is persisted
             DaylyDataStore.saveActivities(context, sorted)
+        }
+    }
+    fun deleteActivity(index: Int) {
+        val updated = _activities.value.toMutableList().also {
+            it.removeAt(index)
+        }
+
+        _activities.value = updated
+        updateProgress()
+
+        viewModelScope.launch {
+            DaylyDataStore.saveActivities(context, updated)
         }
     }
 
@@ -129,4 +144,15 @@ class DaylyViewModel(
             endMinute = 30
         )
     )
+
+    private fun hasSeededBefore(): Boolean {
+        val prefs = context.getSharedPreferences("dayly_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("seeded", false)
+    }
+
+    private fun markSeeded() {
+        val prefs = context.getSharedPreferences("dayly_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("seeded", true).apply()
+    }
+
 }
